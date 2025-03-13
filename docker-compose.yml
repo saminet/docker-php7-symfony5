@@ -1,0 +1,106 @@
+version: '3.8'
+
+services:
+  # Service PHP 7.4 avec Apache (utilise le Dockerfile personnalisé)
+  www:
+    build: .
+    container_name: symfony_php
+    ports:
+      - "8080:80"
+    #working_dir: /var/www/html
+    volumes:
+      - ./docker/php/vhosts:/etc/apache2/sites-enabled
+      - ./:/var/www
+    restart: always
+    networks:
+      - symfony_network
+    depends_on:
+      - mysql
+      - rabbitmq
+      - mailcatcher
+    environment:
+      DATABASE_URL: "mysql://root:password@mysql:3306/symfony_db"
+      RABBITMQ_URL: "amqp://guest:guest@rabbitmq:5672/%2f"
+      MAILER_DSN: "smtp://mailcatcher:1025"
+
+  # Service MySQL
+  mysql:
+    platform: linux/x86_64
+    image: mysql:5.7
+    container_name: symfony_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: symfony_db
+      MYSQL_USER: root
+      MYSQL_PASSWORD: symfony
+    volumes:
+      - mysql_data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    networks:
+      - symfony_network
+
+  # Service RabbitMQ
+  rabbitmq:
+    image: rabbitmq:3.9-management
+    container_name: symfony_rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"  # Port pour AMQP
+      - "15672:15672"  # Port pour l'interface de gestion RabbitMQ
+    networks:
+      - symfony_network
+
+  # Service Mailcatcher
+  mailcatcher:
+    image: schickling/mailcatcher
+    container_name: symfony_mailcatcher
+    ports:
+      - "1080:1080"  # Port pour l'interface web de Mailcatcher
+      - "1025:1025"  # Port SMTP pour envoyer des e-mails
+    networks:
+      - symfony_network
+
+  # Service phpMyAdmin (optionnel)
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin
+    container_name: symfony_phpmyadmin
+    environment:
+      PMA_HOST: mysql
+      PMA_USER: root
+      PMA_PASSWORD: password
+    ports:
+      - "8081:80"
+    depends_on:
+      - mysql
+    networks:
+      - symfony_network
+
+# Volumes pour persister les données
+
+###> doctrine/doctrine-bundle ###
+  database:
+    image: postgres:${POSTGRES_VERSION:-16}-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+      # You should definitely change the password in production
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-!ChangeMe!}
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+    volumes:
+      - database_data:/var/lib/postgresql/data:rw
+      # You may use a bind-mounted host directory instead, so that it is harder to accidentally remove the volume and lose all your data!
+      # - ./docker/db/data:/var/lib/postgresql/data:rw
+###< doctrine/doctrine-bundle ###
+volumes:
+  mysql_data:
+
+
+###> doctrine/doctrine-bundle ###
+  database_data:
+###< doctrine/doctrine-bundle ###
+# Réseau pour connecter les services
+networks:
+  symfony_network:
+    driver: bridge
